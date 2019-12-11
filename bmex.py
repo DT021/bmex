@@ -107,7 +107,7 @@ def _store(start: str, symbols: set, channel: str, path: str, base: str):
     temp = start.strftime("%Y%m%d")  # Saves passing 'temp' as an argument.
     new = True
 
-    with open(temp, "r") as inp:
+    with open(temp, newline="") as inp:
         reader = csv.reader(inp)
         for row in reader:
             # Pandas couldn't parse the dates - The next line fixes that.
@@ -131,7 +131,7 @@ def _store(start: str, symbols: set, channel: str, path: str, base: str):
                         os.remove(_file)
                     new = False
 
-                with open(_file, "a") as out:
+                with open(_file, "a", newline="") as out:
                     write = csv.writer(out)
                     write.writerow(row)
     os.remove(temp)
