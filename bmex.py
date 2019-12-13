@@ -20,6 +20,21 @@ import time
 # https://public.bitmex.com/?prefix=data/trade/
 endpoint = "https://s3-eu-west-1.amazonaws.com/public.bitmex.com/data/{}/{}.csv.gz"
 
+trades_header = [
+    "timestamp",
+    "symbol",
+    "side",
+    "size",
+    "price",
+    "tickDirection",
+    "trdMatchID",
+    "grossValue",
+    "homeNotional",
+    "foreignNotional",
+]
+
+quotes_header = ["timestamp", "symbol", "bidSize", "bidPrice", "askPrice", "askSize"]
+
 
 def _validate_dates(start: dt, end: dt):
     """
@@ -106,12 +121,13 @@ def _store(start: str, symbols: set, channel: str, path: str, base: str):
     """
     temp = start.strftime("%Y%m%d")  # Saves passing 'temp' as an argument.
     new = True
+    header = True
 
     with open(temp, newline="") as inp:
         reader = csv.reader(inp)
         for row in reader:
             # Pandas couldn't parse the dates - The next line fixes that.
-            row[0] = row[0].replace("D", " ", 1)
+            row[0] = row[0].replace("D", "T", 1)
             if row[1] in symbols:
                 location = (
                     f"{path}/{base}/{row[1]}/{channel}s/{start.year}/{start.month}"
@@ -133,6 +149,10 @@ def _store(start: str, symbols: set, channel: str, path: str, base: str):
 
                 with open(_file, "a", newline="") as out:
                     write = csv.writer(out)
+                    if header:
+                        h = trades_header if channel == "trade" else quotes_header
+                        write.writerow(h)
+                        header = False
                     write.writerow(row)
     os.remove(temp)
 
@@ -197,32 +217,8 @@ def main(args):
 
     report = {}
     if "trades" in channels:
-        """
-        {
-            "timestamp": "2019-12-10T12:04:54.716Z",
-            "symbol": "string",
-            "side": "string",
-            "size": 0,
-            "price": 0,
-            "tickDirection": "string",
-            "trdMatchID": "string",
-            "grossValue": 0,
-            "homeNotional": 0,
-            "foreignNotional": 0
-        }
-        """
         report["trades"] = poll_data(start, end, symbols, "trade", save_to)
     if "quotes" in channels:
-        """
-        {
-            "timestamp": "2019-12-10T12:04:54.541Z",
-            "symbol": "string",
-            "bidSize": 0,
-            "bidPrice": 0,
-            "askPrice": 0,
-            "askSize": 0
-        }
-        """
         report["quotes"] = poll_data(start, end, symbols, "quote", save_to)
 
     print("-" * 80)
