@@ -146,7 +146,7 @@ def _store_quotes_trades(start: str, symbols: set, channel: str, path: str, base
     """
     temp = start.strftime("%Y%m%d")  # Saves passing 'temp' as an argument.
     new = True
-    header = True
+    header = {symbol: True for symbol in symbols}
 
     with open(temp, newline="") as inp:
         reader = csv.reader(inp)
@@ -154,8 +154,9 @@ def _store_quotes_trades(start: str, symbols: set, channel: str, path: str, base
             # Pandas couldn't parse the dates - The next line fixes that.
             row[0] = row[0].replace("D", "T", 1)
             if row[1] in symbols:
+                symbol = row[1]
                 location = (
-                    f"{path}/{base}/{row[1]}/{channel}s/{start.year}/{start.month}"
+                    f"{path}/{base}/{symbol}/{channel}s/{start.year}/{start.month}"
                 )
 
                 if not os.path.isdir(location):
@@ -174,10 +175,10 @@ def _store_quotes_trades(start: str, symbols: set, channel: str, path: str, base
 
                 with open(_file, "a", newline="") as out:
                     write = csv.writer(out)
-                    if header:
+                    if header[symbol]:
                         h = trades_header if channel == "trade" else quotes_header
                         write.writerow(h)
-                        header = False
+                        header[symbol] = False
                     write.writerow(row)
     os.remove(temp)
 
