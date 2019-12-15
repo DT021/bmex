@@ -284,7 +284,6 @@ def poll_bars(
     """
 
     req = 0
-    err = 0
     header = None
     error = False
 
