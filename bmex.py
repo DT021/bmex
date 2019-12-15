@@ -229,7 +229,7 @@ def poll_quotes_trades(
 
 def _store_bars(
     data: list,
-    end: str,
+    end: dt,
     path: str,
     base: str,
     symbol: str,
