@@ -1,7 +1,7 @@
 """
 bmex.py
 
-A script to download and store historical data (bars + quotes + trades) from BitMEX.
+A script to download and store historical data (bars, quotes and trades) from BitMEX.
 
 Copyright (c) 2019, Diogo Flores.
 License: MIT
@@ -26,37 +26,36 @@ bars_endpoint = "https://www.bitmex.com/api/v1/trade/bucketed?binSize={}&partial
 quotes_trades_endpoint = (
     "https://s3-eu-west-1.amazonaws.com/public.bitmex.com/data/{}/{}.csv.gz"
 )
-
-bars_header = [
-    "timestamp",
-    "symbol",
-    "open",
-    "high",
-    "low",
-    "close",
-    "trades",
-    "volume",
-    "vwap",
-    "lastSize",
-    "turnover",
-    "homeNotional",
-    "foreignNotional",
-]
-
-quotes_header = ["timestamp", "symbol", "bidSize", "bidPrice", "askPrice", "askSize"]
-
-trades_header = [
-    "timestamp",
-    "symbol",
-    "side",
-    "size",
-    "price",
-    "tickDirection",
-    "trdMatchID",
-    "grossValue",
-    "homeNotional",
-    "foreignNotional",
-]
+_headers = {
+    "bars": [
+        "timestamp",
+        "symbol",
+        "open",
+        "high",
+        "low",
+        "close",
+        "trades",
+        "volume",
+        "vwap",
+        "lastSize",
+        "turnover",
+        "homeNotional",
+        "foreignNotional",
+    ],
+    "quote": ["timestamp", "symbol", "bidSize", "bidPrice", "askPrice", "askSize"],
+    "trade": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+    ],
+}
 
 
 def _validate_dates(start: dt, end: dt):
@@ -69,10 +68,10 @@ def _validate_dates(start: dt, end: dt):
     today = dt.today()
 
     if start < min_date:
-        sys.exit(f"\nError: Start-date can't be earlier than {min_date.date()}\n")
+        sys.exit(f"\nERROR: Start-date can't be earlier than {min_date.date()}\n")
 
     if end < start:
-        sys.exit("\nError: End-date can't be earlier than start-date.\n")
+        sys.exit("\nERROR: End-date can't be earlier than start-date.\n")
 
     if end > today:
         end = today
@@ -85,23 +84,23 @@ def _validate_symbols(symbols: set):
     Validates that each symbol/index exists/existed on BitMEX.
     """
 
-    r = requests.get(
+    response = requests.get(
         "https://www.bitmex.com/api/v1/instrument?count=500&reverse=false"
     ).json()
 
-    valid = [x["symbol"] for x in r]
-    not_valid = [symb for symb in symbols if symb not in valid]
+    valid = [field["symbol"] for field in response]
+    not_valid = [symbol for symbol in symbols if symbol not in valid]
 
     if not_valid:
-        sys.exit(f"\nError: Not valid symbol(s): {not_valid}.\n")
+        sys.exit(f"\nERROR: These symbols are not valid: {not_valid}.\n")
 
     return symbols
 
 
-def _make_dirs(symbols: set, save_to: str = None):
+def _validate_path(save_to: str = None):
     """
-    Creates a base directory and one sub-directory for each symbol, to be
-    populated with historical data.
+    Creates a directory ('BITMEX') if the path is valid, otherwise it exists the program
+    with an error message.
     """
 
     base = "BITMEX"
@@ -109,29 +108,27 @@ def _make_dirs(symbols: set, save_to: str = None):
 
     if path:
         if not os.path.exists(path):
-            sys.exit("\nError: The path you provided does not exist.\n")
+            sys.exit("\nERROR: The path you provided does not exist.\n")
     else:
         path = os.getcwd()
 
-    if not os.path.isdir(f"{path}/{base}"):
+    path = f"{path}/{base}"
+    if not os.path.isdir(f"{path}"):
         try:
-            os.mkdir(f"{path}/{base}")
+            os.mkdir(f"{path}")
         except PermissionError:
-            sys.exit(f"\nError: You don't have permissions to write on {path}\n")
+            sys.exit(f"\nERROR: You don't have permissions to write on {path}\n")
 
-    for sym in symbols:
-        if not os.path.isdir(f"{path}/{base}/{sym}"):
-            os.mkdir(f"{path}/{base}/{sym}")
-
-    return base, path
+    return path
 
 
-def _unzip_quotes_trades(temp: str, r):
+def _unzip_quotes_trades(temp: str, response: dict):
     """
     Unzip downloaded .tar.gz file and parse the data inside.
     """
+
     with open(temp, "wb") as fp:
-        fp.write(r.content)
+        fp.write(response.content)
 
     with gzip.open(temp, "rb") as fp:
         data = fp.read()
@@ -140,72 +137,74 @@ def _unzip_quotes_trades(temp: str, r):
         fp.write(data)
 
 
-def _store_quotes_trades(start: str, symbols: set, channel: str, path: str, base: str):
+def _delete_old(_file: str):
+    """
+    If the '_file' already exists, remove it and create a new one to which to append the
+    data to.
+    This is a safety measure to ensure data integrity, in case the program is run with
+    the same start and end dates multiple times.
+    """
+
+    if os.path.exists(_file):
+        os.remove(_file)
+
+
+def _store_quotes_trades(start: str, symbols: set, channel: str, path: str):
     """
     Stores the data as .csv files on a pre-defined (see README.md) directory structure.
     """
-    temp = start.strftime("%Y%m%d")  # Saves passing 'temp' as an argument.
+
     new = True
     header = {symbol: True for symbol in symbols}
+    temp = start.strftime("%Y%m%d")  # Points to the file.
 
     with open(temp, newline="") as inp:
         reader = csv.reader(inp)
         for row in reader:
-            # Pandas couldn't parse the dates - The next line fixes that.
-            row[0] = row[0].replace("D", "T", 1)
             if row[1] in symbols:
                 symbol = row[1]
-                location = (
-                    f"{path}/{base}/{symbol}/{channel}s/{start.year}/{start.month}"
-                )
 
+                location = f"{path}/{symbol}/{channel}s/{start.year}/{start.month}"
                 if not os.path.isdir(location):
                     os.makedirs(location)
 
                 _file = f"{location}/{temp[:4]}-{temp[4:6]}-{temp[6:]}.csv"
 
                 if new:
-                    # If the file already exists, remove it before creating a new one
-                    # and start appending to it.
-                    # This is a safety measure to ensure data integrity, in case the
-                    # program is run with the same start and end dates multiple times.
-                    if os.path.exists(_file):
-                        os.remove(_file)
+                    _delete_old(_file)
                     new = False
 
-                with open(_file, "a", newline="") as out:
-                    write = csv.writer(out)
+                # Pandas couldn't parse the dates - The next line fixes that.
+                row[0] = row[0].replace("D", "T", 1)
+
+                with open(_file, "a", newline="") as f:
+                    writer = csv.writer(f)
                     if header[symbol]:
-                        h = trades_header if channel == "trade" else quotes_header
-                        write.writerow(h)
+                        writer.writerow(_headers[channel])
                         header[symbol] = False
-                    write.writerow(row)
+                    writer.writerow(row)
+
     os.remove(temp)
 
 
-def poll_quotes_trades(
-    start: dt, end: dt, symbols: set, channel: str, base: str, path: str
-):
+def poll_quotes_trades(start: dt, end: dt, symbols: set, channel: str, path: str):
     """
     Polls data in daily blocks from BitMEX servers.
     """
 
-    print("-" * 80)
-    print(f"Start processing {channel}s:\n")
     while start <= end:
         # BitMEX names each zipped file by its date in the format below.
-        # We must download it as such and then unzip it and extract the data,
-        # hence the "temp" variable name.
+        # We must download, unzip it and extract the data.
         temp = start.strftime("%Y%m%d")
         count = 0
         while True:
-            r = requests.get(quotes_trades_endpoint.format(channel, temp))
-            if r.status_code == 200:
+            response = requests.get(quotes_trades_endpoint.format(channel, temp))
+            if response.status_code == 200:
                 break
             else:
                 count += 1
                 if count == 10:
-                    if r.status_code == 404:
+                    if response.status_code == 404:
                         # Data for today or yesterday might yet not be available.
                         today = dt.today()
                         yesterday = today - timedelta(1)
@@ -214,12 +213,14 @@ def poll_quotes_trades(
                             or start.date() == yesterday.date()
                         ):
                             return f"Failed to download: {start.date()} - data not (yet) available."
-                    r.raise_for_status()
-                print(f"{r.status_code} error processing: {start.date()} - retrying.")
+                    response.raise_for_status()
+                print(
+                    f"ERROR: {response.status_code} while processing {start.date()} - retrying."
+                )
                 time.sleep(10)
 
-        _unzip_quotes_trades(temp, r)
-        _store_quotes_trades(start, symbols, channel, path, base)
+        _unzip_quotes_trades(temp, response)
+        _store_quotes_trades(start, symbols, channel, path)
 
         print(f"Processed {channel}s: {str(start)[:10]}")
         start += timedelta(days=1)
@@ -228,14 +229,7 @@ def poll_quotes_trades(
 
 
 def _store_bars(
-    data: list,
-    end: dt,
-    path: str,
-    base: str,
-    symbol: str,
-    channel: str,
-    bar: str,
-    header: dt,
+    data: list, end: dt, path: str, symbol: str, channel: str, bar: str, header: dt
 ):
     """
     Stores the data as .csv files on a pre-defined (see README.md) directory structure.
@@ -248,7 +242,7 @@ def _store_bars(
         if date > end.date():
             return
 
-        location = f"{path}/{base}/{symbol}/{channel}/{bar}/{date.year}/{date.month}"
+        location = f"{path}/{symbol}/{channel}/{bar}/{date.year}/{date.month}"
         if not os.path.isdir(location):
             os.makedirs(location)
 
@@ -257,18 +251,14 @@ def _store_bars(
 
         new = True if date != header else False
         if new:
-            # If the file already exists, remove it before creating a new one
-            # and start appending to it.
-            # This is a safety measure to ensure data integrity, in case the
-            # program is run with the same start and end dates multiple times.
-            if os.path.exists(_file):
-                os.remove(_file)
+            _delete_old(_file)
 
         with open(_file, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=bars_header)
-            # "header" starts as None and after the 2nd iteration, keeps memory
-            # of the last "header" (date) used - if different then it writes
-            # a bars_header to the new csv file.
+            writer = csv.DictWriter(f, fieldnames=_headers[channel])
+
+            # "header" starts as None but from the 2nd iteration on it equals the last
+            # date. If the actual date (not datetime) is different than the previous one,
+            # a new header is written (on a new file).
             if header != date:
                 writer.writeheader()
                 header = date
@@ -276,129 +266,136 @@ def _store_bars(
     return header
 
 
-def poll_bars(
-    start: dt, end: dt, symbols: set, channel: str, bars: list, base: str, path: str
-):
+def poll_bars(start: dt, end: dt, symbols: set, channel: str, bars: list, path: str):
     """
     Polls bars (time buckets of trades) from BitMEX servers.
     Options are: [1m, 5m, 1h, 1d]
     """
 
+    # Number of requests made to the server.
     req = 0
+
     header = None
     error = False
 
-    print("-" * 80)
-    print(f"Start processing {channel}:\n")
     for symbol in symbols:
         for bar in bars:
-            # Can't modify start/end directly since they will be used multiple times.
-            st = start
-            nd = end
+            # Can't modify 'start' and 'end' directly.
+            _start = start
+            _end = end + timedelta(days=1)
 
-            while st < (nd + timedelta(days=1)):
+            while _start < _end:
                 if error:
                     print("Success: continuing.")
-                error = False
-                req += 1
+                    error = False
 
+                req += 1
                 # 30 is the maximum number of requests allowed per minute.
                 if req % 30 == 0:
-                    print(f"Sleeping for 60 seconds.")
+                    print(f"Respecting API limits - Sleeping for 60 seconds.")
                     time.sleep(60)
                     req = 0
 
-                r = requests.get(
-                    bars_endpoint.format(
-                        bar, symbol, str(st), str(nd + timedelta(days=1))
-                    )
+                response = requests.get(
+                    bars_endpoint.format(bar, symbol, str(_start), str(_end))
                 )
 
                 # BitMEX API often throws a "429 - too many requests" error, even
                 # if we are respecting its limits.
-                if r.status_code == 429:
+                if response.status_code == 429:
                     error = True
                     print(
-                        f"Error processing: {st.date()} - Sleeping for 60 seconds and retrying."
+                        f"Failed to process: {_start.date()} - Sleeping for 60 seconds and retrying."
                     )
                     time.sleep(60)
                     continue
 
-                data = r.json()
-
+                data = response.json()
                 if not data:
-                    print(f"Data does not exist {symbol}-{bar}: {st.date()}")
-                    st += timedelta(days=1)
+                    print(f"Data does not exist for {symbol}-{bar}: {_start.date()}")
+                    _start += timedelta(days=1)
                     time.sleep(1)
                     continue
 
-                stored = _store_bars(data, nd, path, base, symbol, channel, bar, header)
+                stored = _store_bars(data, _end, path, symbol, channel, bar, header)
                 if stored:
                     header = stored
 
-                print(f"Processed {symbol} {bar}-bars: {st.date()}")
+                print(f"Processed {symbol} {bar}-bars: {_start.date()}")
 
                 # 500 is the maximum number of results per request.
                 if bar == "1m":
-                    st += timedelta(minutes=500)
+                    _start += timedelta(minutes=500)
                 elif bar == "5m":
-                    st += timedelta(minutes=500 * 5)
+                    _start += timedelta(minutes=500 * 5)
                 elif bar == "1h":
-                    st += timedelta(hours=500)
+                    _start += timedelta(hours=500)
                 else:
-                    st += timedelta(days=500)
+                    _start += timedelta(days=500)
 
     return "Success - all data downloaded and stored."
 
 
+def _separator(channel=None):
+    """
+    Prints a separator for each of the different parts of the program.
+    """
+    print("-" * 80)
+    if channel:
+        print(f"Start processing {channel}:\n")
+    else:
+        print("Finished.\n")
+        print("Report")
+        print("------")
+
+
 def _transform_validate(args):
     """
-    Transforms and/or validates the arguments passed to the main function.
+    Transforms and validates the arguments passed to the main function.
     """
 
+    # Strip dates.
     start = dt.strptime(args.start, "%Y-%m-%d")
     end = dt.strptime(args.end, "%Y-%m-%d")
-    bars = args.bars
-    save_to = args.save_to
 
     # Remove possible duplicates.
     symbols = set(args.symbols)
     channels = set(args.channels)
 
-    if "bars" in channels and not bars:
-        sys.exit(
-            """\nIf the channel 'bars' is enabled, you must provide at least one time frame.
-                Options: [1m, 5m, 1h, 1d]\n"""
-        )
-    if bars and "bars" not in channels:
-        sys.exit("\nTime frames provided but channel 'bars' is not enabled.\n")
+    # Validate all values.
+    if args.bars:
+        bars = set(args.bars)
+        if "bars" in channels and not bars:
+            sys.exit("\nChannel 'bars' enabled, but no timeframe was provided.")
+        if bars and "bars" not in channels:
+            sys.exit("\nTimeframe(s) provided but channel 'bars' is not enabled.\n")
+    else:
+        bars = None
 
-    # Validate symbols and dates.
-    start, end = _validate_dates(start, end)
     symbols = _validate_symbols(symbols)
+    start, end = _validate_dates(start, end)
+    path = _validate_path(args.save_to)
 
-    return bars, channels, end, save_to, start, symbols
+    return symbols, channels, start, end, bars, path
 
 
 def main(args):
 
-    bars, channels, end, save_to, start, symbols = _transform_validate(args)
-    base, path = _make_dirs(symbols, save_to)
+    symbols, channels, start, end, bars, path = _transform_validate(args)
 
     report = {}
-    if "trades" in channels:
-        report["trades"] = poll_quotes_trades(start, end, symbols, "trade", base, path)
-    if "quotes" in channels:
-        report["quotes"] = poll_quotes_trades(start, end, symbols, "quote", base, path)
-    if "bars" in channels:
-        report["bars"] = poll_bars(start, end, symbols, "bars", bars, base, path)
+    for channel in channels:
+        _separator(channel)
+        if channel == "bars":
+            report[channel] = poll_bars(start, end, symbols, channel, bars, path)
+        else:
+            report[channel] = poll_quotes_trades(
+                start, end, symbols, channel[:-1], path
+            )
 
-    print("-" * 80)
-    print("Finished.\n")
-    print("Report")
-    print("------")
-    for k, v in report.items():
-        print(f"{k}: {v}")
+    _separator()
+    for channel, status in report.items():
+        print(f"{channel}: {status}")
     print()
 
 
