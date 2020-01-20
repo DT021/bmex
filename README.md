@@ -3,10 +3,10 @@
 
 Lets you download historical [bars](https://www.bitmex.com/api/explorer/#!/Trade/Trade_getBucketed), [quotes](https://www.bitmex.com/api/explorer/#!/Quote/Quote_get) and [trades](https://www.bitmex.com/api/explorer/#!/Trade/Trade_get) data, for all symbols and indices (including delisted ones) from BitMEX + stores it by creating the directory structure shown below.
 
-Example: `python bmex.py --symbols XBTUSD ETHUSD --channels bars quotes trades --start 2018-12-31 --end 2019-01-02 --bars 1m 5m 1h 1d`
+Example: `python bmex.py --symbols XBTUSD ETHUSD --channels bars quotes trades --start 2018-12-31 --end 2019-01-01 --bars 1m 5m 1h 1d`
 
 ```
-current_directory # Where you run the code
+current_directory   # Where you run the code.
     └──BITMEX/
         ├── ETHUSD
         │   ├── bars
@@ -16,48 +16,42 @@ current_directory # Where you run the code
         │   │   │   │       └── 2018-12-31.csv
         │   │   │   └── 2019
         │   │   │       └── 1
-        │   │   │           ├── 2019-01-01.csv
-        │   │   │           └── 2019-01-02.csv
+        │   │   │           └── 2019-01-01.csv
         │   │   ├── 1h
         │   │   │   ├── 2018
         │   │   │   │   └── 12
         │   │   │   │       └── 2018-12-31.csv
         │   │   │   └── 2019
         │   │   │       └── 1
-        │   │   │           ├── 2019-01-01.csv
-        │   │   │           └── 2019-01-02.csv
+        │   │   │           └── 2019-01-01.csv
         │   │   ├── 1m
         │   │   │   ├── 2018
         │   │   │   │   └── 12
         │   │   │   │       └── 2018-12-31.csv
         │   │   │   └── 2019
         │   │   │       └── 1
-        │   │   │           ├── 2019-01-01.csv
-        │   │   │           └── 2019-01-02.csv
+        │   │   │           └── 2019-01-01.csv
         │   │   └── 5m
         │   │       ├── 2018
         │   │       │   └── 12
         │   │       │       └── 2018-12-31.csv
         │   │       └── 2019
         │   │           └── 1
-        │   │               ├── 2019-01-01.csv
-        │   │               └── 2019-01-02.csv
+        │   │               └── 2019-01-01.csv
         │   ├── quotes
         │   │   ├── 2018
         │   │   │   └── 12
         │   │   │       └── 2018-12-31.csv
         │   │   └── 2019
         │   │       └── 1
-        │   │           ├── 2019-01-01.csv
-        │   │           └── 2019-01-02.csv
+        │   │           └── 2019-01-01.csv
         │   └── trades
         │       ├── 2018
         │       │   └── 12
         │       │       └── 2018-12-31.csv
         │       └── 2019
         │           └── 1
-        │               ├── 2019-01-01.csv
-        │               └── 2019-01-02.csv
+        │               └── 2019-01-01.csv
         └── XBTUSD
             ├── ... # Same as above.
 ```
