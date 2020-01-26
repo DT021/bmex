@@ -99,8 +99,8 @@ def _validate_symbols(symbols: set):
 
 def _validate_path(save_to: str = None):
     """
-    Creates a directory ('BITMEX') if the path is valid, otherwise it exists the program
-    with an error message.
+    Creates a directory ('BITMEX') if the path is valid.
+    Exits the program, with an error message, otherwise.
     """
 
     base = "BITMEX"
